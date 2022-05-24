@@ -106,5 +106,8 @@ def prepare_data(
     return x_train, x_val, x_test, y_train, y_val, y_test
 
 
-x1,x2,x3,y1,y2,y3 = prepare_data('../data/fut_nq.csv', etf_file_path='../data/etf_nq.csv', opt_file_path='../data/opt_nq.csv')
-print(x1)
+x_tr, x_vl, x_tt, y_tr, y_vl, y_tt = prepare_data('../data/fut_nq.csv',
+                                                  etf_file_path='../data/etf_nq.csv',
+                                                  opt_file_path='../data/opt_nq.csv',
+                                                  periods=(1, 2, 3, 4, 37, 38, 39, 40))
+print(x_tr)
