@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, ParameterGrid
 from sklearn.preprocessing import MinMaxScaler
-from catboost import CatBoostRegressor, Pool
+from catboost import CatBoostRegressor, Pool, cv as cat_cv, sum_models
+from sklearn.metrics import r2_score, mean_absolute_error, mean_absolute_percentage_error
 import shap
 
 
@@ -103,11 +104,53 @@ def prepare_data(
     x_val = pd.DataFrame(data=scaler.transform(x_val), index=x_val.index, columns=x_val.columns)
     x_test = pd.DataFrame(data=scaler.transform(x_test), index=x_test.index, columns=x_test.columns)
 
-    return x_train, x_val, x_test, y_train, y_val, y_test
+    return x_train, x_val, x_test, y_train, y_val, y_test, df
 
 
-x_tr, x_vl, x_tt, y_tr, y_vl, y_tt = prepare_data('../data/fut_nq.csv',
-                                                  etf_file_path='../data/etf_nq.csv',
-                                                  opt_file_path='../data/opt_nq.csv',
-                                                  periods=(1, 2, 3, 4, 37, 38, 39, 40))
-print(x_tr)
+def init_fit(x_train, x_val, y_train, y_val, model_type='CatBoost'):
+    param_grid = {'depth': [4], 'l2_leaf_reg': [1], 'learning_rate': [0.1], 'models_num': [10],
+                  'early_stopping_rounds': [30]}
+    for idx, params in enumerate(ParameterGrid(param_grid)):
+        models_num = params['models_num']
+        cv_dataset = Pool(data=pd.concat([x_train, x_val]), label=pd.concat([y_train, y_val]))
+
+        cat_params = {"iterations": 500,
+                      "depth": params['depth'],
+                      "l2_leaf_reg": params['l2_leaf_reg'],
+                      "learning_rate": params['learning_rate'],
+                      "loss_function": "MAE",
+                      "custom_metric": 'R2',
+                      # "eval_metric": 'BalancedAccuracy',
+                      "use_best_model": True,
+                      "verbose": False}
+
+        res = cat_cv(cv_dataset,
+                     cat_params,
+                     fold_count=models_num,
+                     shuffle=False,
+                     early_stopping_rounds=params['early_stopping_rounds'],
+                     type='TimeSeries ',
+                     return_models=True,
+                     plot=False,
+                     logging_level='Silent')
+    ensemble = res[1]
+    return ensemble
+
+
+def predict_evaluate(x_test, df, ensemble):
+    models_num = len(ensemble)
+    cat = sum_models(ensemble, [1 / models_num] * models_num)
+
+    prediction_cat = pd.DataFrame(cat.predict(x_test), index=x_test.index, columns=['prediction'])
+
+    tdf_test = prediction_cat.join(df)[['prediction', 'VOLUME_fut_agg', 'VOLUME_fut']].copy(deep=True)
+    tdf_test['VOLUME_prediction'] = tdf_test['prediction'] + tdf_test['VOLUME_fut_agg']
+    tdf_test['VOLUME_original'] = tdf_test['VOLUME_fut'] + tdf_test['VOLUME_fut_agg']
+
+    std_orig = tdf_test.std(numeric_only=True)['VOLUME_original']
+    r2_cat = r2_score(tdf_test['VOLUME_original'], tdf_test['VOLUME_prediction'])
+    mae_cat = mean_absolute_error(tdf_test['VOLUME_original'], tdf_test['VOLUME_prediction'])
+    mape_cat = mean_absolute_percentage_error(tdf_test['VOLUME_original'], tdf_test['VOLUME_prediction'])
+
+    res = {'r2': r2_cat, 'mae': mae_cat, 'mape': mape_cat, 'mae/std': mae_cat / std_orig}
+    return res, tdf_test['VOLUME_original'], tdf_test['VOLUME_prediction']
