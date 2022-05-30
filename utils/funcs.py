@@ -11,7 +11,7 @@ def prepare_data(
         fut_file_path,
         etf_file_path=None,
         opt_file_path=None,
-        periods=(1, 2, 3, 4, 37, 38, 39, 40)):
+        periods=(1, 2, 3, 4, 38, 39, 40, 41)):
     # raw data
     columns = ['VOLUME_fut']
     fut_ts = pd.read_csv(fut_file_path).set_index('Time')
@@ -108,7 +108,7 @@ def prepare_data(
 
 
 def init_fit(x_train, x_val, y_train, y_val, model_type='CatBoost'):
-    param_grid = {'depth': [4], 'l2_leaf_reg': [1], 'learning_rate': [0.1], 'models_num': [10],
+    param_grid = {'depth': [3], 'l2_leaf_reg': [1], 'learning_rate': [0.09], 'models_num': [10],
                   'early_stopping_rounds': [30]}
     for idx, params in enumerate(ParameterGrid(param_grid)):
         models_num = params['models_num']
